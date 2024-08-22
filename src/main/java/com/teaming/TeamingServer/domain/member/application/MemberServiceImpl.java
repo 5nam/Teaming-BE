@@ -1,0 +1,473 @@
+package com.teaming.TeamingServer.domain.member.application;
+
+import com.teaming.TeamingServer.domain.project.repository.ProjectRepository;
+import com.teaming.TeamingServer.domain.schedule.repository.ScheduleRepository;
+import com.teaming.TeamingServer.global.auth.Jwt.JwtToken;
+import com.teaming.TeamingServer.global.auth.Jwt.JwtTokenProviderImpl;
+import com.teaming.TeamingServer.domain.member.dto.mainPageDto.Portfolio;
+import com.teaming.TeamingServer.domain.member.dto.mainPageDto.ProgressProject;
+import com.teaming.TeamingServer.domain.member.dto.mainPageDto.RecentlyProject;
+import com.teaming.TeamingServer.domain.member.dto.request.CheckCurrentPasswordRequestDto;
+import com.teaming.TeamingServer.domain.member.dto.request.MemberChangePasswordRequestDto;
+import com.teaming.TeamingServer.domain.member.dto.request.MemberNicknameChangeRequestDto;
+import com.teaming.TeamingServer.domain.member.dto.response.MainPageResponseDto;
+import com.teaming.TeamingServer.domain.member.dto.response.MemberMyPageResponseDto;
+import com.teaming.TeamingServer.domain.member.dto.response.PortfolioPageResponseDto;
+import com.teaming.TeamingServer.domain.member.dto.response.ProgressProjectsPageResponseDto;
+import com.teaming.TeamingServer.domain.member.repository.MemberProjectRepository;
+import com.teaming.TeamingServer.domain.member.repository.MemberRepository;
+import com.teaming.TeamingServer.domain.member.repository.MemberScheduleRepository;
+import com.teaming.TeamingServer.global.exception.BaseException;
+import com.teaming.TeamingServer.global.util.RedisUtil;
+import com.teaming.TeamingServer.global.common.BaseErrorResponse;
+import com.teaming.TeamingServer.global.common.BaseResponse;
+import com.teaming.TeamingServer.domain.member.entity.Member;
+import com.teaming.TeamingServer.domain.member.entity.MemberProject;
+import com.teaming.TeamingServer.domain.project.entity.Project;
+import com.teaming.TeamingServer.domain.project.entity.Status;
+import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+@Service
+@Transactional
+@RequiredArgsConstructor
+public class MemberServiceImpl implements MemberService {
+
+    private final MemberRepository memberRepository;
+
+    private final AuthenticationManagerBuilder authenticationManagerBuilder;
+    private final JwtTokenProviderImpl jwtTokenProviderImpl;
+
+    private final ProjectRepository projectRepository;
+    private final MemberProjectRepository memberProjectRepository;
+
+    private final ScheduleRepository scheduleRepository;
+    private final MemberScheduleRepository memberScheduleRepository;
+
+    private final RedisUtil redisUtil;
+
+    // 상수값들 - 메인 페이지에 반환할 프로젝들 개수들
+    private final static int RECENTLY_PROJECT_NUM = 3;
+    private final static int PROGRESS_PROJECT_NUM = 8;
+    private final static int PORTFOLIO_PROJECT_NUM = 8;
+
+
+    @Override
+    @Transactional
+    public ResponseEntity logout(HttpServletRequest request) {
+        String accessToken = jwtTokenProviderImpl.resolveToken(request);
+
+        try {
+            jwtTokenProviderImpl.logoutToken(accessToken);
+        } catch (BaseException baseException) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(new BaseErrorResponse(HttpStatus.FORBIDDEN.value(), baseException.getMessage()));
+        }
+
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(new BaseResponse(HttpStatus.OK.value(), "로그아웃 되었습니다."));
+    }
+
+
+    @Override
+    @Transactional
+    public ResponseEntity changePassword(Long memberId, MemberChangePasswordRequestDto memberChangePasswordRequestDto) {
+
+        Member member = memberRepository.findById(memberId).get();
+
+        // (1) 비밀번호 변경
+        member.updatePassword(memberChangePasswordRequestDto.getChange_password());
+
+        // 검증된 인증 정보로 JWT 토큰 생성
+        JwtToken token = jwtTokenProviderImpl.generateToken(member);
+
+        JwtToken newToken = JwtToken.builder()
+                    .grantType(token.getGrantType())
+                    .accessToken(token.getAccessToken())
+                    .memberId(memberId)
+                    .build();
+
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(new BaseResponse<JwtToken>(HttpStatus.OK.value(), "비밀번호 변경이 완료되었습니다.", newToken));
+    }
+
+    @Override
+    @Transactional
+    public ResponseEntity checkCurrentPassword(Long memberId, CheckCurrentPasswordRequestDto checkCurrentPasswordRequestDto) {
+
+        Member member = memberRepository.findById(memberId).get();
+
+        // 2. 사용자가 입력한 비밀번호와 DB 에 있는 비밀번호가 일치하는지 확인
+        String currentPassword = member.getPassword();
+
+        if (!currentPassword.equals(checkCurrentPasswordRequestDto.getCurrentPassword())) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new BaseErrorResponse(HttpStatus.BAD_REQUEST.value(), "알맞은 비밀번호를 입력해주세요."));
+        }
+
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(new BaseResponse(HttpStatus.OK.value(), "비밀번호가 일치합니다."));
+    }
+
+    @Override
+    @Transactional
+    public ResponseEntity MemberMyPage(Long memberId) {
+
+        Member member = memberRepository.findById(memberId).get();
+
+        MemberMyPageResponseDto memberMyPageResponseDto = MemberMyPageResponseDto.builder()
+                .memberId(memberId)
+                .name(member.getName())
+                .email(member.getEmail())
+                .profileImage(member.getProfile_image()).build();
+
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(new BaseResponse<MemberMyPageResponseDto>(HttpStatus.OK.value(), memberMyPageResponseDto));
+    }
+
+    @Override
+    @Transactional
+    public ResponseEntity changeNickName(Long memberId, MemberNicknameChangeRequestDto memberNicknameChangeRequestDto) {
+
+        Member member = memberRepository.findById(memberId).get();
+
+        // 2. 바꾸려는 닉네임이 이미 존재하는지 확인
+        Optional<Member> equalNickname = memberRepository.findByName(memberNicknameChangeRequestDto.getChange_nickname());
+
+        if(!equalNickname.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new BaseErrorResponse(HttpStatus.BAD_REQUEST.value(), "이미 사용 중인 닉네임입니다."));
+        }
+
+        // 3. 사용 가능한 닉네임이라면, 변경 후 변경 완료
+        member.updateNickName(memberNicknameChangeRequestDto.getChange_nickname());
+
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(new BaseResponse(HttpStatus.OK.value(), "닉네임 변경이 완료되었습니다."));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ResponseEntity mainPage(Long memberId) {
+
+        Member member = memberRepository.findById(memberId).get();
+
+        // 2. memberId 로 프로젝트 조회
+        List<MemberProject> memberProject = member.getMemberProjects();
+
+        // (1) 찾은 아예 프로젝트가 없다면 null 반환
+        if(memberProject.isEmpty()) {
+            MainPageResponseDto mainPageResponseDto = MainPageResponseDto.builder()
+                    .memberId(memberId)
+                    .name(member.getName())
+                    .recentlyProject(null)
+                    .progressProject(null)
+                    .portfolio(null).build();
+            return ResponseEntity.status(HttpStatus.OK)
+                    .body(new BaseResponse<MainPageResponseDto>(HttpStatus.OK.value(), mainPageResponseDto));
+        }
+
+        // (2) 찾은 프로젝트들이 있다면, 프로젝트 최근 시작 기준으로 정렬 - 최근 프로젝트
+        List<RecentlyProject> recentlyProject = searchRecentlyProject(memberProject, RECENTLY_PROJECT_NUM);
+
+        // (3) 진행중인 프로젝트 - 오름차순 정렬
+        List<ProgressProject> progressProjects = searchProgressProject(memberProject, PROGRESS_PROJECT_NUM);
+
+        // (4) 끝난 프로젝트 - 내림차순 정렬 - 포트폴리오
+        List<Portfolio> portfolios = searchPortPolio(memberProject, PORTFOLIO_PROJECT_NUM);
+
+        // 최종 반환 MainPageResponse 생성
+        MainPageResponseDto mainPageResponseDto = MainPageResponseDto.builder()
+                .memberId(memberId)
+                .name(member.getName())
+                .recentlyProject(recentlyProject)
+                .progressProject(progressProjects)
+                .portfolio(portfolios).build();
+
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(new BaseResponse<MainPageResponseDto>(HttpStatus.OK.value(), mainPageResponseDto));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ResponseEntity portfolioPage(Long memberId) {
+
+        Member member = memberRepository.findById(memberId).get();
+
+        // 2. memberId 로 프로젝트 조회
+        List<MemberProject> memberProject = member.getMemberProjects();
+
+        // (1) 찾은 아예 프로젝트가 없다면 null 반환
+        if(memberProject.isEmpty()) {
+            PortfolioPageResponseDto portfolioPageResponseDto = PortfolioPageResponseDto.builder()
+                    .member_id(memberId)
+                    .member_name(member.getName())
+                    .portfolio(null).build();
+            return ResponseEntity.status(HttpStatus.OK)
+                    .body(new BaseResponse<PortfolioPageResponseDto>(HttpStatus.OK.value(), portfolioPageResponseDto));
+        }
+
+        // (2) 있다면, 끝난 순으로 project 정렬
+        List<Portfolio> portfolios = searchPortPolio(memberProject, memberProject.size());
+
+        // 최종 포트폴리오 페이지 넘기기
+        PortfolioPageResponseDto portfolioPageResponseDto = PortfolioPageResponseDto.builder()
+                .member_id(memberId)
+                .member_name(member.getName())
+                .portfolio(portfolios).build();
+
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(new BaseResponse<PortfolioPageResponseDto>(HttpStatus.OK.value(), portfolioPageResponseDto));
+
+    }
+
+    // 진행 중인 프로젝트
+    @Override
+    @Transactional(readOnly = true)
+    public ResponseEntity progressProjectsPage(Long memberId) {
+
+        Member member = memberRepository.findById(memberId).get();
+
+        // 2. memberId 로 프로젝트 조회
+        List<MemberProject> memberProject = member.getMemberProjects();
+
+        // (1) 찾은 아예 프로젝트가 없다면 null 반환
+        if(memberProject.isEmpty()) {
+            ProgressProjectsPageResponseDto progressProjectsPageResponseDto = ProgressProjectsPageResponseDto.builder()
+                    .member_id(memberId)
+                    .member_name(member.getName())
+                    .progressProjects(null).build();
+            return ResponseEntity.status(HttpStatus.OK)
+                    .body(new BaseResponse<ProgressProjectsPageResponseDto>(HttpStatus.OK.value(), progressProjectsPageResponseDto));
+        }
+
+        // (2) 있다면, 끝난 순으로 project 정렬
+        List<ProgressProject> progressProjects = searchProgressProject(memberProject, memberProject.size());
+
+        // 최종 포트폴리오 페이지 넘기기
+        ProgressProjectsPageResponseDto progressProjectsPageResponseDto = ProgressProjectsPageResponseDto.builder()
+                .member_id(memberId)
+                .member_name(member.getName())
+                .progressProjects(progressProjects).build();
+
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(new BaseResponse<ProgressProjectsPageResponseDto>(HttpStatus.OK.value(), progressProjectsPageResponseDto));
+    }
+
+    private List<RecentlyProject> searchRecentlyProject(List<MemberProject> memberProject, int projectNum) {
+
+        List<Project> projects = memberProject.stream()
+                .map(MemberProject::getProject)
+                .filter(project -> isModifyAt(project.getModifyAt()) && isStatusING(project.getProject_status()))
+                .collect(Collectors.toList());
+
+        if(projects.isEmpty()) return null;
+
+        // 수정 날짜를 기준으로 내림차순 정렬 - 가장 최근으로 수정한 날짜
+        Collections.sort(projects, new SortByModifyDate().reversed());
+
+        if(projectNum > projects.size()) {
+            projectNum = projects.size();
+        }
+
+        // 내림차순 정렬한 것 RecentlyProject 형식으로 3개만 담기
+        List<RecentlyProject> recentlyProject = projects.stream()
+                .map(project -> new RecentlyProject(project.getProject_id(), project.getProject_name(), project.getStart_date()
+                                                    , project.getProject_status(), project.getProject_image()))
+                .collect(Collectors.toList());
+
+        return recentlyProject.subList(0, projectNum);
+    }
+
+    private List<ProgressProject> searchProgressProject(List<MemberProject> memberProject, int projectNum) {
+
+        List<Project> projects = memberProject.stream()
+                .map(MemberProject::getProject)
+                .filter(project -> isStatusING(project.getProject_status()))
+                .collect(Collectors.toList());
+
+        // 마감날짜 순으로 - 마감 날짜를 기준으로 오름차순
+        Collections.sort(projects, new SortByEndDate());
+
+        // 반환하려는 projectNum 보다 실제 조회된 프로젝트의 개수가 적으면 적은 걸로 기준
+        if(projectNum > projects.size()) {
+            projectNum = projects.size();
+        }
+
+        List<ProgressProject> progressProjects = projects.stream()
+                .map(project -> new ProgressProject(project.getProject_id(), project.getProject_name(), project.getStart_date()
+                                                    , project.getEnd_date(), project.getProject_image(), project.getProject_status()))
+                .collect(Collectors.toList());
+
+        progressProjects.subList(0, projectNum); // 필요한 개수만큼 자르기
+
+        return progressProjects.subList(0, projectNum); // 필요한 개수만큼 자르기
+    }
+
+    private boolean isStatusING(Status status) {
+        return status.equals(Status.ING);
+    }
+
+    private boolean isModifyAt(LocalDateTime modifyAt) {
+        return modifyAt != null;
+    }
+
+
+    private List<Portfolio> searchPortPolio(List<MemberProject> memberProject, int projectNum) {
+
+        List<Project> projects = memberProject.stream()
+                .map(MemberProject::getProject)
+                .filter(project -> isStatusEND(project.getProject_status()))
+                .collect(Collectors.toList());
+
+        // 가장 최근에 끝낸 순으로 - 마감 날짜 기준 내림차순
+        Collections.sort(projects, new SortByEndDate().reversed());
+
+        if(projectNum > projects.size()) {
+            projectNum = projects.size();
+        }
+
+
+        List<Portfolio> portfolios = projects.stream()
+                .map(project -> new Portfolio(project.getProject_id(), project.getProject_name(), project.getStart_date()
+                                            ,project.getEnd_date(), project.getProject_image(), project.getProject_status()))
+                .collect(Collectors.toList());
+
+        return portfolios.subList(0, projectNum); // 필요한 개수만큼 자르기
+    }
+
+    private boolean isStatusEND(Status status) {
+        return status.equals(Status.END);
+    }
+
+    // 테스트용 Member_Project 저장 코드
+    public void saveMemberProject(Long member_id, Long project_id, Long schedule_id) {
+        Member member = memberRepository.findById(member_id).get();
+        Project project = projectRepository.findById(project_id).get();
+
+        MemberProject memberProject = MemberProject.builder()
+                .member(member)
+                .project(project).build();
+
+        memberProjectRepository.save(memberProject);
+    }
+
+    // 프로젝트 정렬 : 시작 일자 기준으로 정렬
+    static class SortByStartDate implements Comparator<Project> {
+        @Override
+        public int compare(Project a, Project b) {
+            return a.getStart_date().compareTo(b.getStart_date());
+        }
+    }
+
+    // 프로젝트 정렬 : 끝난 일자 기준으로 정렬
+    static class SortByEndDate implements Comparator<Project> {
+        @Override
+        public int compare(Project a, Project b) {
+            return a.getEnd_date().compareTo(b.getEnd_date());
+        }
+    }
+
+    // 프로젝트 정렬 : 수정 일자 기준으로 정렬
+    static class SortByModifyDate implements Comparator<Project> {
+        @Override
+        public int compare(Project a, Project b) {
+            return a.getModifyAt().compareTo(b.getModifyAt());
+        }
+    }
+//
+//// 원래코드
+//    @Override
+//    @Transactional
+//    public ResponseEntity<BaseResponse<ScheduleList>> scheduleByDate(LocalDate schedule_start, Long memberId, Long scheduleId) {
+//        // 1. 멤버 아이디로 MemberSchedule 조회
+//        Member member = memberRepository.findById(memberId).get();
+//
+//        // 2. 이 멤버가 가지고 있는 스케줄 정보를 얻는다.
+//        List<MemberSchedule> memberSchedules = memberScheduleRepository.findByMember(member);
+//
+//        // 2. 멤버 아이디로 찾은 스케줄이 있는지 : 멤버가 가진 스케줄이 잇는지 확인
+//        // 멤버랑 스케줄 연결해서 멤버한테 스케줄 있는지 확인해야하는데-멤버스케줄일까 스케줄일까
+//
+//
+////        Optional<MemberSchedule> haveSchedules = memberScheduleRepository.findBySchedule(schedule);
+//
+//        // 만약 멤버 아이디로 찾은 스케줄이 없다면 null 반환
+//        if (memberSchedules.isEmpty()) {
+//            return ResponseEntity
+//                    .status(HttpStatus.OK)
+//                    .body(new BaseResponse<>(HttpStatus.OK.value(), "찾은 스케줄이 없습니다.", null));
+//        }
+//
+//        // 시간 순 정렬도 해야하는거 아닐까....
+//        // 3. 멤버 아이디로 가진 스케줄이 있다면, 스케줄 중에 start_date 에 해당하는 날짜가 있는지 확인
+//        // (1) 스케줄을 찾아서 저장하는 과정이 필요
+//        List<Schedule> schedules = new ArrayList<>();
+//        for (int i = 0; i < memberSchedules.size(); i++) {
+//            Schedule schedule = scheduleRepository.findById(memberSchedules.get(i).getSchedule().getSchedule_id()).get();
+//            schedules.add(schedule);
+//        }
+//
+//
+////        List<Schedule> schedules = new ArrayList<>();
+////        for (int i = 0; i < memberSchedules.size(); i++) {
+////            Schedule schedule = scheduleRepository.findById(scheduleId).get();
+////            Optional<MemberSchedule> haveSchedules = memberScheduleRepository.findBySchedule(schedule);
+////            schedules.add(schedule);
+////        }
+//
+//
+//
+//        //        for (int i = 0; i < memberProject.size(); i++) {
+////            Project project = projectRepository.findById(memberProject.get(i).getProject().getProject_id()).get();
+////            // Status 가 END 인 것만
+////            if (project.getProject_status().equals(Status.END)) {
+////                projects.add(project);
+////            }
+////        }
+//
+//        List<Schedule> finalSchedules = new ArrayList<>();
+//        for (int i = 0; i < memberSchedules.size(); i++) {
+//            if (schedules.get(i).getSchedule_start().isEqual(schedule_start)) {
+//                finalSchedules.add(schedules.get(i));
+//            }
+//        }
+//
+////        scheduleRepository.save(finalSchedules);
+//
+//        List<FilteredSchedules> schedulesDates = new ArrayList<>();
+//        // (2) 저장했으니 보여준다
+//        for (int i = 0; i < finalSchedules.size(); i++) {
+//            Schedule schedule = finalSchedules.get(i);
+//
+//            FilteredSchedules schedulesDate = FilteredSchedules.builder()
+//                    .schedule_name(schedules.get(i).getSchedule_name())
+//                    .schedule_start(schedules.get(i).getSchedule_start())
+//                    .schedule_start_time(schedules.get(i).getSchedule_start_time())
+//                    .schedule_end(schedules.get(i).getSchedule_end())
+//                    .schedule_end_time(schedules.get(i).getSchedule_end_time())
+//                    .build();
+//
+//            schedulesDates.add(schedulesDate);
+//        }
+//
+//        ScheduleList scheduleList = ScheduleList.builder()
+//                .schedules(schedulesDates).build();
+//        // 해당하는 날짜 리스트 만들어서 저장한다음에 보여줘야할듯?
+//        return ResponseEntity
+//                .status(HttpStatus.OK)
+//                .body(new BaseResponse<ScheduleList>(HttpStatus.OK.value(), "사용자의 당일 일정", scheduleList));
+//    }
+
+
+}
