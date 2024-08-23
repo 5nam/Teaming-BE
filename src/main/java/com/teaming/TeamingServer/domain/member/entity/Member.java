@@ -1,8 +1,8 @@
 package com.teaming.TeamingServer.domain.member.entity;
 
 
-import com.teaming.TeamingServer.domain.member.dto.mainPageDto.InviteMember;
 import com.teaming.TeamingServer.domain.member.dto.request.MemberRequestDto;
+import com.teaming.TeamingServer.domain.member.dto.response.MainPageResponseDto;
 import com.teaming.TeamingServer.global.exception.BadRequestException;
 import com.teaming.TeamingServer.domain.project.entity.File;
 import com.teaming.TeamingServer.global.util.Time;
@@ -111,8 +111,8 @@ public class Member extends Time {
         }
     }
 
-    public InviteMember toInviteMember() {
-        InviteMember inviteMember = new InviteMember(this.name, this.profile_image, this.email);
+    public MainPageResponseDto.InviteMember toInviteMember() {
+        MainPageResponseDto.InviteMember inviteMember = new MainPageResponseDto.InviteMember(this.name, this.profile_image, this.email);
 
         return inviteMember;
     }

@@ -1,6 +1,5 @@
 package com.teaming.TeamingServer.domain.member.dto.response;
 
-import com.teaming.TeamingServer.domain.member.dto.mainPageDto.Portfolio;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -15,5 +14,5 @@ import java.util.List;
 public class PortfolioPageResponseDto {
     private Long member_id;
     private String member_name;
-    private List<Portfolio> portfolio;
+    private List<MainPageResponseDto.Portfolio> portfolio;
 }

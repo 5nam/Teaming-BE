@@ -4,9 +4,6 @@ import com.teaming.TeamingServer.domain.project.repository.ProjectRepository;
 import com.teaming.TeamingServer.domain.schedule.repository.ScheduleRepository;
 import com.teaming.TeamingServer.global.auth.Jwt.JwtToken;
 import com.teaming.TeamingServer.global.auth.Jwt.JwtTokenProviderImpl;
-import com.teaming.TeamingServer.domain.member.dto.mainPageDto.Portfolio;
-import com.teaming.TeamingServer.domain.member.dto.mainPageDto.ProgressProject;
-import com.teaming.TeamingServer.domain.member.dto.mainPageDto.RecentlyProject;
 import com.teaming.TeamingServer.domain.member.dto.request.CheckCurrentPasswordRequestDto;
 import com.teaming.TeamingServer.domain.member.dto.request.MemberChangePasswordRequestDto;
 import com.teaming.TeamingServer.domain.member.dto.request.MemberNicknameChangeRequestDto;
@@ -178,13 +175,13 @@ public class MemberServiceImpl implements MemberService {
         }
 
         // (2) 찾은 프로젝트들이 있다면, 프로젝트 최근 시작 기준으로 정렬 - 최근 프로젝트
-        List<RecentlyProject> recentlyProject = searchRecentlyProject(memberProject, RECENTLY_PROJECT_NUM);
+        List<MainPageResponseDto.RecentlyProject> recentlyProject = searchRecentlyProject(memberProject, RECENTLY_PROJECT_NUM);
 
         // (3) 진행중인 프로젝트 - 오름차순 정렬
-        List<ProgressProject> progressProjects = searchProgressProject(memberProject, PROGRESS_PROJECT_NUM);
+        List<MainPageResponseDto.ProgressProject> progressProjects = searchProgressProject(memberProject, PROGRESS_PROJECT_NUM);
 
         // (4) 끝난 프로젝트 - 내림차순 정렬 - 포트폴리오
-        List<Portfolio> portfolios = searchPortPolio(memberProject, PORTFOLIO_PROJECT_NUM);
+        List<MainPageResponseDto.Portfolio> portfolios = searchPortPolio(memberProject, PORTFOLIO_PROJECT_NUM);
 
         // 최종 반환 MainPageResponse 생성
         MainPageResponseDto mainPageResponseDto = MainPageResponseDto.builder()
@@ -218,7 +215,7 @@ public class MemberServiceImpl implements MemberService {
         }
 
         // (2) 있다면, 끝난 순으로 project 정렬
-        List<Portfolio> portfolios = searchPortPolio(memberProject, memberProject.size());
+        List<MainPageResponseDto.Portfolio> portfolios = searchPortPolio(memberProject, memberProject.size());
 
         // 최종 포트폴리오 페이지 넘기기
         PortfolioPageResponseDto portfolioPageResponseDto = PortfolioPageResponseDto.builder()
@@ -252,7 +249,7 @@ public class MemberServiceImpl implements MemberService {
         }
 
         // (2) 있다면, 끝난 순으로 project 정렬
-        List<ProgressProject> progressProjects = searchProgressProject(memberProject, memberProject.size());
+        List<MainPageResponseDto.ProgressProject> progressProjects = searchProgressProject(memberProject, memberProject.size());
 
         // 최종 포트폴리오 페이지 넘기기
         ProgressProjectsPageResponseDto progressProjectsPageResponseDto = ProgressProjectsPageResponseDto.builder()
@@ -264,7 +261,7 @@ public class MemberServiceImpl implements MemberService {
                 .body(new BaseResponse<ProgressProjectsPageResponseDto>(HttpStatus.OK.value(), progressProjectsPageResponseDto));
     }
 
-    private List<RecentlyProject> searchRecentlyProject(List<MemberProject> memberProject, int projectNum) {
+    private List<MainPageResponseDto.RecentlyProject> searchRecentlyProject(List<MemberProject> memberProject, int projectNum) {
 
         List<Project> projects = memberProject.stream()
                 .map(MemberProject::getProject)
@@ -281,15 +278,15 @@ public class MemberServiceImpl implements MemberService {
         }
 
         // 내림차순 정렬한 것 RecentlyProject 형식으로 3개만 담기
-        List<RecentlyProject> recentlyProject = projects.stream()
-                .map(project -> new RecentlyProject(project.getProject_id(), project.getProject_name(), project.getStart_date()
+        List<MainPageResponseDto.RecentlyProject> recentlyProject = projects.stream()
+                .map(project -> new MainPageResponseDto.RecentlyProject(project.getProject_id(), project.getProject_name(), project.getStart_date()
                                                     , project.getProject_status(), project.getProject_image()))
                 .collect(Collectors.toList());
 
         return recentlyProject.subList(0, projectNum);
     }
 
-    private List<ProgressProject> searchProgressProject(List<MemberProject> memberProject, int projectNum) {
+    private List<MainPageResponseDto.ProgressProject> searchProgressProject(List<MemberProject> memberProject, int projectNum) {
 
         List<Project> projects = memberProject.stream()
                 .map(MemberProject::getProject)
@@ -304,8 +301,8 @@ public class MemberServiceImpl implements MemberService {
             projectNum = projects.size();
         }
 
-        List<ProgressProject> progressProjects = projects.stream()
-                .map(project -> new ProgressProject(project.getProject_id(), project.getProject_name(), project.getStart_date()
+        List<MainPageResponseDto.ProgressProject> progressProjects = projects.stream()
+                .map(project -> new MainPageResponseDto.ProgressProject(project.getProject_id(), project.getProject_name(), project.getStart_date()
                                                     , project.getEnd_date(), project.getProject_image(), project.getProject_status()))
                 .collect(Collectors.toList());
 
@@ -323,7 +320,7 @@ public class MemberServiceImpl implements MemberService {
     }
 
 
-    private List<Portfolio> searchPortPolio(List<MemberProject> memberProject, int projectNum) {
+    private List<MainPageResponseDto.Portfolio> searchPortPolio(List<MemberProject> memberProject, int projectNum) {
 
         List<Project> projects = memberProject.stream()
                 .map(MemberProject::getProject)
@@ -338,8 +335,8 @@ public class MemberServiceImpl implements MemberService {
         }
 
 
-        List<Portfolio> portfolios = projects.stream()
-                .map(project -> new Portfolio(project.getProject_id(), project.getProject_name(), project.getStart_date()
+        List<MainPageResponseDto.Portfolio> portfolios = projects.stream()
+                .map(project -> new MainPageResponseDto.Portfolio(project.getProject_id(), project.getProject_name(), project.getStart_date()
                                             ,project.getEnd_date(), project.getProject_image(), project.getProject_status()))
                 .collect(Collectors.toList());
 

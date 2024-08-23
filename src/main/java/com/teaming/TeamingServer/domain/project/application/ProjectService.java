@@ -1,9 +1,9 @@
 package com.teaming.TeamingServer.domain.project.application;
 
+import com.teaming.TeamingServer.domain.member.dto.response.MainPageResponseDto;
 import com.teaming.TeamingServer.domain.project.dto.request.ProjectInviteRequestDto;
 import com.teaming.TeamingServer.domain.project.dto.request.ProjectStatusRequestDto;
 import com.teaming.TeamingServer.domain.project.dto.request.ProjectCreateRequestDto;
-import com.teaming.TeamingServer.domain.member.dto.mainPageDto.InviteMember;
 import com.teaming.TeamingServer.domain.member.dto.response.MemberListDto;
 import com.teaming.TeamingServer.domain.member.repository.MemberProjectRepository;
 import com.teaming.TeamingServer.domain.member.repository.MemberRepository;
@@ -211,7 +211,7 @@ public class ProjectService {
 
         memberProjectRepository.save(memberProject); // 프로젝트에 참여하는 member 로 매핑 후 저장
 
-        List<InviteMember> inviteMembers = memberProjects.stream()
+        List<MainPageResponseDto.InviteMember> inviteMembers = memberProjects.stream()
                 .map(MemberProject::getMember)
                 .map(Member::toInviteMember)
                 .collect(Collectors.toList());

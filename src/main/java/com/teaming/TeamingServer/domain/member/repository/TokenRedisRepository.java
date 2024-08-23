@@ -1,4 +1,4 @@
-package com.teaming.TeamingServer.domain.member;
+package com.teaming.TeamingServer.domain.member.repository;
 
 import org.springframework.data.repository.CrudRepository;
 
