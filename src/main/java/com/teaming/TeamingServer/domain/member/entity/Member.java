@@ -21,16 +21,28 @@ public class Member extends Time {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long member_id;
+    private Long id;
 
-    @Column(nullable = false)
-    private String name;
+    @Column(nullable = false, length = 45)
+    private String memberName;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 45)
+    private String password;
+
+    @Column(nullable = false, length = 45)
     private String email;
 
-    @Column(nullable = false)
-    private String password;
+    @Column(nullable = false, length = 45)
+    private String nickname;
+
+    @Column(nullable = false, length = 45)
+    private String snsType;
+
+    @Column(nullable = false, length = 45)
+    private String snsId;
+
+    @Column(nullable = false, length = 45)
+    private String sns_connect_date;
 
     @Column
     private String profile_image;
@@ -38,9 +50,9 @@ public class Member extends Time {
     @Column(nullable = false)
     private boolean agreement;
 
-//    @Column(nullable = false)
-//    @Enumerated(EnumType.STRING)
-//    private Role role;
+    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
+    private Role role;
 
     @OneToMany(mappedBy = "member", cascade = CascadeType.ALL, orphanRemoval = true)
     public List<MemberProject> memberProjects = new ArrayList<>();
@@ -56,14 +68,14 @@ public class Member extends Time {
 
     @Builder
     public Member(String name, String email, String password, boolean agreement) {
-        this.name = name;
+        this.nickname = name;
         this.email = email;
         this.password = password;
         this.agreement = agreement;
     }
 
     public Member(MemberRequestDto dto) {
-        this.name = dto.getName();
+        this.nickname = dto.getName();
         this.email = dto.getEmail();
         this.password = dto.getPassword();
     }
@@ -79,7 +91,7 @@ public class Member extends Time {
     }
 
     public Member updateNickName(String nickName) {
-        this.name = nickName;
+        this.nickname = nickName;
         return this;
     }
 
@@ -101,10 +113,6 @@ public class Member extends Time {
         return new UsernamePasswordAuthenticationToken(email, password);
     }
 
-    public long getMemberId() {
-        return member_id;
-    }
-
     public void validatePassword(String password) {
         if(!isPasswordMatched(password)) {
             throw new BadRequestException("비밀번호가 일치하지 않습니다.");
@@ -112,7 +120,7 @@ public class Member extends Time {
     }
 
     public MainPageResponseDto.InviteMember toInviteMember() {
-        MainPageResponseDto.InviteMember inviteMember = new MainPageResponseDto.InviteMember(this.name, this.profile_image, this.email);
+        MainPageResponseDto.InviteMember inviteMember = new MainPageResponseDto.InviteMember(this.nickname, this.profile_image, this.email);
 
         return inviteMember;
     }
